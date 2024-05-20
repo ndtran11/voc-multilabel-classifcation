@@ -2,7 +2,7 @@ import torch
 import numpy as np
 from tqdm import tqdm
 
-from model import MultiLabelClassification
+from model import MLC
 from dataset import Dataset
 
 import pandas as pd
@@ -25,7 +25,7 @@ def train_multilabel_classification(
     val_batch_size=None,
     device=torch.device('cuda' if torch.cuda.is_available() else 'cpu'),
     wd=os.path.join(os.getcwd(), '.tmp')
-) -> MultiLabelClassification:
+) -> MLC:
     os.makedirs(wd, exist_ok=True)
     best_model = os.path.join(wd, 'best_model.pth')
 
@@ -142,8 +142,6 @@ def parse_options():
     parser.add_argument('--train_ratio', help='Ratio of training data', type=float, default=0.7)
     parser.add_argument('--dataset_root', help='Root directory of the dataset', type=str, default='data')
     parser.add_argument('--output_model', help='Output model file', type=str, default='best_model.pth')
-
-    parser.add_argument('--clip_model', help='CLIP model to use', type=str, default='ViT-B/32')
     parser.add_argument('--save_only_classifier', help='Just save the classifier', type=bool, default=True)
 
     return parser.parse_args()
@@ -152,42 +150,48 @@ if __name__ == '__main__':
     opt = parse_options()
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    clip_model, clip_preprocess = clip.load(opt.clip_model, device=device)
 
     dataset_root = opt.dataset_root
     assert os.path.isdir(dataset_root), f"Dataset root directory {dataset_root} not found"
 
-    labels_file = os.path.join(dataset_root, 'labels.json')
+    labels_file = os.path.join(dataset_root, 'labels.npy')
     assert os.path.isfile(labels_file), f"Labels file {labels_file} not found"
 
-    
-    labels = pd.read_json(labels_file)
+    labels = np.load(labels_file)
 
     train_ratio = opt.train_ratio
     train_size = int(train_ratio * len(labels))
 
-    train_labels = labels[:train_size]
-    val_labels = labels[train_size:]
+    train_samples = np.array(random.sample(range(len(labels)), train_size), dtype=np.int32)
+    val_samples = np.array([i for i in range(len(labels)) if i not in train_samples], dtype=np.int32)
 
-    num_classes = 20
+    img_files = sorted(os.listdir(os.path.join(dataset_root, 'images')))
+    
+    train_labels = labels[train_samples]
+    val_labels = labels[val_samples]
+    
+    train_img = [img_files[i] for i in train_samples]
+    val_img = [img_files[i] for i in val_samples]
+
+    num_classes = labels.shape[1]
+    model = MLC(num_classes).to(device)
 
     train_dataset = Dataset(
         os.path.join(dataset_root, 'images'),
-        train_labels['filename'].to_list(),
-        train_labels['label'].to_list(),
+        train_img,
+        train_labels,
         num_classes,
-        clip_preprocess  
+        model.transforms()
     )
 
     val_dataset = Dataset(
         os.path.join(dataset_root, 'images'),
-        val_labels['filename'].to_list(),
-        val_labels['label'].to_list(),
+        val_img,
+        val_labels,
         num_classes,
-        clip_preprocess  
+        model.transforms()
     )
 
-    model = MultiLabelClassification(clip_model.visual, num_classes).to(device)
     loss_fn = torch.nn.functional.binary_cross_entropy
 
     optimizer = torch.optim.Adam(model.parameters(), lr=1e-4)

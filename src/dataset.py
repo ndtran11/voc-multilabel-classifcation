@@ -20,8 +20,8 @@ class Dataset(torch.utils.data.Dataset):
 
         self.root = root
         self.image_files = image_files
-    
-        self.labels = [np.array(e) for e in labels] if labels is not None else None 
+
+        self.labels = labels
 
         self.transform = transform
         self.n_classes = n_classes
@@ -45,12 +45,8 @@ class Dataset(torch.utils.data.Dataset):
                 if self.root is not None else image_file
         
             image = Image.open(path).convert("RGB")
-            label_set = np.zeros(self.n_classes)
-        
-            if self.labels is not None:
-                label = self.labels[idx]
-                label_set[label] = 1
-        
+            label_set = self.labels[idx]
+
         else:
             image_file = self.image_files[idx]
             another_3_images = random.choices(range(len(self)), k = 3)
@@ -68,12 +64,12 @@ class Dataset(torch.utils.data.Dataset):
             label_set = np.zeros(self.n_classes)
         
             if self.labels is not None:
-                label = self.labels[idx]
-                label_set[label] = 1
+                label_set = np.zeros(self.n_classes)
+                
+                label_set |= self.labels[idx]
                 
                 for i in another_3_images:
-                    label = self.labels[i]
-                    label_set[label] = 1
+                    label_set |= self.labels[i]
         
         transforms_img = self.transform(image)
         return transforms_img, torch.tensor(label_set, dtype=torch.float32) 
