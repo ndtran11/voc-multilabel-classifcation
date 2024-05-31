@@ -62,7 +62,7 @@ def train_multilabel_classification(
             optimizer.step()
 
             train_loss += loss.item()
-            train_acc += ((logits > 0.5).int() == (labels > 0.5).int()).sum(dim=1).float().mean().item()
+            train_acc += ((logits > 0.5).int() == (labels > 0.5).int()).float().mean().item()
 
         if lr_scheduler is not None:
             lr_scheduler.step()
@@ -78,7 +78,7 @@ def train_multilabel_classification(
 
                 loss = loss_fn(logits, labels)
                 val_loss += loss.item()
-                val_acc += ((logits > 0.5).int() == (labels > 0.5).int()).sum(dim=1).float().mean().item()
+                val_acc += ((logits > 0.5).int() == (labels > 0.5).int()).float().mean().item()
 
         train_loss /= len(train_loader)
         val_loss /= len(val_loader)
