@@ -53,16 +53,16 @@ class Dataset(torch.utils.data.Dataset):
 
         else:
             image_file = self.image_files[idx]
-            another_3_images = random.choices(range(len(self)), k = 3)
+            other_3_images = random.choices(range(len(self)), k = 3)    
 
             if self.root is not None:
                 images = [Image.open(os.path.join(self.root, image_file)).convert("RGB") 
                         for image_file in [image_file] + [
-                            self.image_files[i] for i in another_3_images]]
+                            self.image_files[i] for i in other_3_images]]
             else:
                 images = [Image.open(image_file).convert("RGB") 
                         for image_file in [image_file] + [
-                            self.image_files[i] for i in another_3_images]]
+                            self.image_files[i] for i in other_3_images]]
 
             image = mosaic_2_2(*images)
             label_set = np.zeros(self.n_classes)
@@ -71,7 +71,7 @@ class Dataset(torch.utils.data.Dataset):
                 label = self.labels[idx]
                 label_set[label] = 1
 
-                for i in another_3_images:
+                for i in other_3_images:
                     label = self.labels[i]
                     label_set[label] = 1
 
