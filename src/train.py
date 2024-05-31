@@ -2,7 +2,7 @@ import torch
 import numpy as np
 from tqdm import tqdm
 
-from model import MLC
+from model import MultiLabelClassification
 from dataset import Dataset
 
 import pandas as pd
@@ -25,7 +25,7 @@ def train_multilabel_classification(
     val_batch_size=None,
     device=torch.device('cuda' if torch.cuda.is_available() else 'cpu'),
     wd=os.path.join(os.getcwd(), '.tmp')
-) -> MLC:
+) -> MultiLabelClassification:
     os.makedirs(wd, exist_ok=True)
     best_model = os.path.join(wd, 'best_model.pth')
 
@@ -46,7 +46,7 @@ def train_multilabel_classification(
     for epoch in range(n_epoch):
         model.train()
         train_loss, val_loss, train_acc, val_acc = 0, 0, 0, 0
-        
+
         for i, (images, labels) in enumerate(tqdm(train_loader, total=len(train_loader), desc='Training')):
 
             images = images.to(device)
@@ -111,7 +111,7 @@ def sanity_check(
     val_loader = torch.utils.data.DataLoader(val_ds, batch_size=1, shuffle=False)
 
     model.eval()
-    
+
     try:
         for i, (images, labels) in enumerate(train_loader):
             model(images.to(device))
@@ -126,7 +126,7 @@ def sanity_check(
     except Exception as err:
         traceback.print_exc()
         return False
-    
+
     return True
 
 def parse_options():
@@ -142,6 +142,8 @@ def parse_options():
     parser.add_argument('--train_ratio', help='Ratio of training data', type=float, default=0.7)
     parser.add_argument('--dataset_root', help='Root directory of the dataset', type=str, default='data')
     parser.add_argument('--output_model', help='Output model file', type=str, default='best_model.pth')
+
+    parser.add_argument('--clip_model', help='CLIP model to use', type=str, default='ViT-B/32')
     parser.add_argument('--save_only_classifier', help='Just save the classifier', type=bool, default=True)
 
     return parser.parse_args()
@@ -149,55 +151,49 @@ def parse_options():
 if __name__ == '__main__':
     opt = parse_options()
 
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    device = torch.device('cpu') # torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    clip_model, clip_preprocess = clip.load(opt.clip_model, device=device)
 
     dataset_root = opt.dataset_root
     assert os.path.isdir(dataset_root), f"Dataset root directory {dataset_root} not found"
 
-    labels_file = os.path.join(dataset_root, 'labels.npy')
+    labels_file = os.path.join(dataset_root, 'labels.json')
     assert os.path.isfile(labels_file), f"Labels file {labels_file} not found"
 
-    labels = np.load(labels_file)
+
+    labels = pd.read_json(labels_file)
 
     train_ratio = opt.train_ratio
     train_size = int(train_ratio * len(labels))
 
-    train_samples = np.array(random.sample(range(len(labels)), train_size), dtype=np.int32)
-    val_samples = np.array([i for i in range(len(labels)) if i not in train_samples], dtype=np.int32)
+    train_labels = labels[:train_size]
+    val_labels = labels[train_size:]
 
-    img_files = sorted(os.listdir(os.path.join(dataset_root, 'images')))
-    
-    train_labels = labels[train_samples]
-    val_labels = labels[val_samples]
-    
-    train_img = [img_files[i] for i in train_samples]
-    val_img = [img_files[i] for i in val_samples]
-
-    num_classes = labels.shape[1]
-    model = MLC(num_classes).to(device)
+    num_classes = 20
 
     train_dataset = Dataset(
         os.path.join(dataset_root, 'images'),
-        train_img,
-        train_labels,
+        train_labels['filename'].to_list(),
+        train_labels['label'].to_list(),
         num_classes,
-        model.transforms()
+        clip_preprocess  
     )
 
     val_dataset = Dataset(
         os.path.join(dataset_root, 'images'),
-        val_img,
-        val_labels,
+        val_labels['filename'].to_list(),
+        val_labels['label'].to_list(),
         num_classes,
-        model.transforms()
+        clip_preprocess  
     )
 
+    model = MultiLabelClassification(clip_model.visual, num_classes).to(device)
     loss_fn = torch.nn.functional.binary_cross_entropy
 
     optimizer = torch.optim.Adam(model.parameters(), lr=1e-4)
     lr_scheduler = torch.optim.lr_scheduler.StepLR(optimizer, opt.lr_sched_step, opt.lr_decay)
 
-    if not sanity_check(model, train_dataset, val_dataset):
+    if not sanity_check(model, train_dataset, val_dataset, device=device):
         print("Model is not working properly")
         sys.exit(1)
 
@@ -209,7 +205,7 @@ if __name__ == '__main__':
         optimizer, 
         lr_scheduler,
         n_epoch=opt.n_epoch,
-        batch_size=opt.batch_size,
+        train_batch_size=opt.batch_size,
         device=device
     )
 
