@@ -151,7 +151,7 @@ def parse_options():
 if __name__ == '__main__':
     opt = parse_options()
 
-    device = torch.device('cpu') # torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     clip_model, clip_preprocess = clip.load(opt.clip_model, device=device)
 
     dataset_root = opt.dataset_root
